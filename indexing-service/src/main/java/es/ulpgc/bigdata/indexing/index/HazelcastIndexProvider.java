@@ -1,4 +1,3 @@
-
 package es.ulpgc.bigdata.indexing.index;
 
 import com.hazelcast.config.Config;
@@ -9,10 +8,6 @@ import com.hazelcast.multimap.MultiMap;
 
 import java.util.Collection;
 
-/**
- * Proveedor del índice invertido distribuido (Hazelcast).
- * MultiMap "inverted-index": term -> docId, con réplicas configurables.
- */
 public class HazelcastIndexProvider {
 
     private final HazelcastInstance hz;
@@ -28,12 +23,8 @@ public class HazelcastIndexProvider {
     }
 
     public MultiMap<String,String> invertedIndex() { return invertedIndex; }
-
     public HazelcastInstance hazelcast() { return hz; }
-
     public int size() { return invertedIndex.size(); }
-
     public Collection<String> getDocs(String term) { return invertedIndex.get(term); }
-
     public void shutdown() { hz.shutdown(); }
 }

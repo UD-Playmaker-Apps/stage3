@@ -1,11 +1,9 @@
-
 package es.ulpgc.bigdata.indexing.util;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/** Tokenizador simple (sensible a letras y dígitos Unicode). */
 public final class TextTokenizer {
     private static final Pattern SPLIT = Pattern.compile("[^\\p{L}\\p{Nd}]+");
 

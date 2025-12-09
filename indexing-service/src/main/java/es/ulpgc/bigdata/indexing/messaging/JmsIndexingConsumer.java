@@ -1,8 +1,9 @@
-
 package es.ulpgc.bigdata.indexing.messaging;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import es.ulpgc.bigdata.indexing.api.dto.DocumentContent;
 import es.ulpgc.bigdata.indexing.index.HazelcastIndexProvider;
 import es.ulpgc.bigdata.indexing.util.TextTokenizer;
 import org.slf4j.Logger;
@@ -19,15 +20,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Collection;
 
 /**
  * Consumidor JMS que procesa eventos "document.ingested":
- * - Obtiene {documentId, path} del payload JSON.
- * - Intenta leer el contenido por path local.
+ * - Intenta leer el contenido desde path local.
  * - Si falla, hace fallback a GET /ingest/raw/{id} del Ingestion Service.
- * - Tokeniza y actualiza la MultiMap "inverted-index" (term -> docId).
- * - Idempotencia: no inserta duplicados (containsEntry).
+ * - Tokeniza y actualiza la MultiMap "inverted-index".
  */
 public class JmsIndexingConsumer implements MessageListener {
     private static final Logger log = LoggerFactory.getLogger(JmsIndexingConsumer.class);
@@ -55,7 +53,6 @@ public class JmsIndexingConsumer implements MessageListener {
                 if (content == null) content = fetchFromIngestion(id);
 
                 for (String term : TextTokenizer.tokens(content)) {
-                    // Idempotencia: evitar duplicados term->id
                     if (!indexProvider.invertedIndex().containsEntry(term, id)) {
                         indexProvider.invertedIndex().put(term, id);
                     }
@@ -64,14 +61,14 @@ public class JmsIndexingConsumer implements MessageListener {
             }
         } catch (Exception e) {
             log.error("Indexing failed: {}", e.getMessage(), e);
-            // TODO: dead letter / reintento si lo necesitáis
         }
     }
 
     private String tryReadLocal(String path) {
         if (path == null) return null;
-        try { return Files.readString(Path.of(path), StandardCharsets.UTF_8); }
-        catch (Exception e) {
+        try {
+            return Files.readString(Path.of(path, "body.txt"), StandardCharsets.UTF_8);
+        } catch (Exception e) {
             log.warn("Local path not readable: {} ({})", path, e.getMessage());
             return null;
         }
@@ -80,9 +77,13 @@ public class JmsIndexingConsumer implements MessageListener {
     private String fetchFromIngestion(String id) {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(ingestionBase + "/ingest/raw/" + id))
-                    .timeout(Duration.ofSeconds(5)).build();
+                    .timeout(Duration.ofSeconds(5))
+                    .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (res.statusCode() == 200) return res.body();
+            if (res.statusCode() == 200) {
+                DocumentContent doc = new Gson().fromJson(res.body(), DocumentContent.class);
+                return doc.header + "\n" + doc.body;
+            }
         } catch (Exception e) {
             log.error("Error fetching {} from ingestion: {}", id, e.getMessage());
         }
