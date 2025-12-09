@@ -1,0 +1,94 @@
+version: "3.9"
+
+services:
+  activemq:
+    image: rmohr/activemq:latest
+    container_name: activemq
+    ports:
+      - "61616:61616"   # JMS
+      - "8161:8161"     # Web console
+    environment:
+      - ACTIVEMQ_MIN_MEMORY=512
+      - ACTIVEMQ_MAX_MEMORY=1024
+
+  hazelcast:
+    image: hazelcast/hazelcast:5.3
+    container_name: hazelcast
+    environment:
+      - HZ_CLUSTERNAME=search-cluster
+    ports:
+      - "5701:5701"
+
+  ingestion1:
+    build: ./ingestion-service
+    container_name: ingestion1
+    environment:
+      - INGESTION_PORT=7001
+      - DATALAKE_DIR=/data/datalake
+      - REPLICATION_FACTOR=2
+      - INGESTION_PEERS=http://ingestion2:7002
+      - BROKER_URL=tcp://activemq:61616
+      - BROKER_QUEUE_INGESTED=document.ingested
+    volumes:
+      - ingestion1_data:/data
+    depends_on:
+      - activemq
+    ports:
+      - "7001:7001"
+
+  ingestion2:
+    build: ./ingestion-service
+    container_name: ingestion2
+    environment:
+      - INGESTION_PORT=7002
+      - DATALAKE_DIR=/data/datalake
+      - REPLICATION_FACTOR=2
+      - INGESTION_PEERS=http://ingestion1:7001
+      - BROKER_URL=tcp://activemq:61616
+      - BROKER_QUEUE_INGESTED=document.ingested
+    volumes:
+      - ingestion2_data:/data
+    depends_on:
+      - activemq
+    ports:
+      - "7002:7002"
+
+  indexing1:
+    build: ./indexing-service
+    container_name: indexing1
+    environment:
+      - INDEXING_PORT=7003
+      - BROKER_URL=tcp://activemq:61616
+      - BROKER_QUEUE_INGESTED=document.ingested
+      - HAZELCAST_CLUSTER=search-cluster
+      - HAZELCAST_MEMBERS=hazelcast
+      - DATALAKE_ROOT=/data        # where ingestion volumes would be mounted in real setup
+    depends_on:
+      - activemq
+      - hazelcast
+
+  search1:
+    build: ./search-service
+    container_name: search1
+    environment:
+      - SEARCH_PORT=7004
+      - HAZELCAST_CLUSTER=search-cluster
+      - HAZELCAST_MEMBERS=hazelcast
+    depends_on:
+      - hazelcast
+    ports:
+      - "7004:7004"
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - search1
+
+volumes:
+  ingestion1_data:
+  ingestion2_data:
