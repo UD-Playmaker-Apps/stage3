@@ -30,7 +30,7 @@ services:
       - BROKER_URL=tcp://activemq:61616
       - BROKER_QUEUE_INGESTED=document.ingested
     volumes:
-      - ingestion1_data:/data
+      - datalake:/data/datalake
     depends_on:
       - activemq
     ports:
@@ -47,7 +47,7 @@ services:
       - BROKER_URL=tcp://activemq:61616
       - BROKER_QUEUE_INGESTED=document.ingested
     volumes:
-      - ingestion2_data:/data
+      - datalake:/data/datalake
     depends_on:
       - activemq
     ports:
@@ -62,6 +62,8 @@ services:
       - BROKER_QUEUE_INGESTED=document.ingested
       - HZ_CLUSTER_NAME=search-cluster
       - INGESTION_BASE=http://ingestion1:7001
+    volumes:
+      - datalake:/data/datalake
     depends_on:
       - activemq
       - hazelcast
@@ -83,12 +85,10 @@ services:
   nginx:
     image: nginx:latest
     container_name: nginx
-    # ❗ Eliminado el volumen que creaba nginx.conf como carpeta
     ports:
       - "8080:8080"
     depends_on:
       - search1
 
 volumes:
-  ingestion1_data:
-  ingestion2_data:
+  datalake:

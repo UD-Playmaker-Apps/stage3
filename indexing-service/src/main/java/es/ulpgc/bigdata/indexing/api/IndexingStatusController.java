@@ -1,4 +1,3 @@
-
 package es.ulpgc.bigdata.indexing.api;
 
 import com.hazelcast.cluster.Member;
@@ -9,11 +8,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * Endpoints de salud y métricas del índice:
- * - GET /health
- * - GET /index/status
- */
 public class IndexingStatusController {
     private final Javalin app;
     private final HazelcastIndexProvider indexProvider;
