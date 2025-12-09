@@ -1,137 +1,92 @@
-
 package es.ulpgc.bigdata.search.core;
 
-import com.hazelcast.client.HazelcastClient;
-import com.hazelcast.client.config.ClientConfig;
-import com.hazelcast.client.config.ClientNetworkConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.multimap.MultiMap;
-import es.ulpgc.bigdata.search.util.QueryTokenizer;
+import com.hazelcast.map.IMap;
+import es.ulpgc.bigdata.search.model.DocumentMetadata;
+import es.ulpgc.bigdata.search.model.Posting;
+import es.ulpgc.bigdata.search.model.SearchHit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Motor de búsqueda sobre Hazelcast (cliente):
- * - Accede a MultiMap "inverted-index": term -> docId.
- * - Soporta modo OR/AND y ordena por score (# de términos que coinciden).
- * - Paginación con offset/limit.
+ * Core search logic: - Takes a textual query - Tokenizes it into terms - For
+ * each term, reads the posting list from the inverted index map - Aggregates
+ * scores per document - Looks up document metadata and returns the best hits.
+ *
+ * This class is intentionally stateless; it always reads from Hazelcast.
  */
 public class SearchEngine {
 
-    private final HazelcastInstance client;
-    private final MultiMap<String, String> invertedIndex;
+    private static final Logger log = LoggerFactory.getLogger(SearchEngine.class);
 
-    private SearchEngine(HazelcastInstance client) {
-        this.client = client;
-        this.invertedIndex = client.getMultiMap("inverted-index");
+    private final IMap<String, List<Posting>> invertedIndex;
+    private final IMap<String, DocumentMetadata> documentsMetadata;
+
+    public SearchEngine(HazelcastInstance hazelcast) {
+        // These map names must match what indexing-service uses
+        this.invertedIndex = hazelcast.getMap("inverted-index");
+        this.documentsMetadata = hazelcast.getMap("documents");
     }
 
-    /** Construye SearchEngine desde variables de entorno. */
-    public static SearchEngine fromEnv() {
-        String clusterName = System.getenv().getOrDefault("HZ_CLUSTER_NAME", "search-cluster");
-        String addressesCsv = System.getenv().getOrDefault("HZ_CLIENT_ADDRESSES", "");
+    /**
+     * Executes a search for the given query string.
+     *
+     * @param queryText user query, e.g. "big data systems"
+     * @param limit max number of hits to return
+     */
+    public List<SearchHit> search(String queryText, int limit) {
+        if (queryText == null || queryText.isBlank()) {
+            return Collections.emptyList();
+        }
 
-        ClientConfig cfg = new ClientConfig();
-        cfg.setClusterName(clusterName);
+        // Simple tokenization: lower-case, split on non-word characters.
+        List<String> terms = tokenize(queryText);
 
-        if (!addressesCsv.isBlank()) {
-            ClientNetworkConfig net = cfg.getNetworkConfig();
-            for (String addr : addressesCsv.split(",")) {
-                String a = addr.trim();
-                if (!a.isBlank()) net.addAddress(a);
+        Map<String, Double> scoreByDocument = new HashMap<>();
+
+        for (String term : terms) {
+            List<Posting> postings = invertedIndex.get(term);
+            if (postings == null || postings.isEmpty()) {
+                continue;
+            }
+
+            for (Posting posting : postings) {
+                // We assume tfIdfScore already includes IDF information.
+                scoreByDocument.merge(posting.getDocumentId(),
+                        posting.getTfIdfScore(),
+                        Double::sum);
             }
         }
 
-        HazelcastInstance client = HazelcastClient.newHazelcastClient(cfg);
-        return new SearchEngine(client);
-    }
-
-    /** Búsqueda con modo OR/AND + paginación y ranking simple. */
-    public Map<String, Object> search(String query, String mode, int offset, int limit) {
-        List<String> terms = QueryTokenizer.tokens(query);
-
-        // Si no hay términos, devolver vacío
-        if (terms.isEmpty()) {
-            return Map.of("query", query, "mode", mode, "count", 0, "docs", List.of());
+        if (scoreByDocument.isEmpty()) {
+            return Collections.emptyList();
         }
 
-        // Recuperar docs por término
-        List<Set<String>> perTermDocs = terms.stream()
-                .map(t -> new HashSet<>(Optional.ofNullable(invertedIndex.get(t)).orElse(List.of())))
-                .collect(Collectors.toList());
+        // Convert to SearchHit objects and sort by score descending.
+        return scoreByDocument.entrySet().stream()
+                .map(entry -> {
+                    String docId = entry.getKey();
+                    double score = entry.getValue();
+                    DocumentMetadata metadata = documentsMetadata.get(docId);
 
-        // Unión (OR) o intersección (AND)
-        Set<String> docs;
-        if ("and".equalsIgnoreCase(mode)) {
-            docs = new HashSet<>(perTermDocs.get(0));
-            perTermDocs.stream().skip(1).forEach(docs::retainAll);
-        } else {
-            docs = new HashSet<>();
-            perTermDocs.forEach(docs::addAll);
-        }
+                    String title = metadata != null ? metadata.getTitle() : docId;
+                    String path = metadata != null ? metadata.getPath() : null;
 
-        // Ranking: # términos que coinciden por doc
-        Map<String, Integer> score = new HashMap<>();
-        for (String d : docs) score.put(d, 0);
-        for (Set<String> set : perTermDocs) {
-            for (String d : set) score.computeIfPresent(d, (k, v) -> v + 1);
-        }
-
-        // Lista tipada con id y score (evita Object y casts)
-        List<DocScore> rankedDocs = docs.stream()
-                .map(d -> new DocScore(d, score.getOrDefault(d, 0)))
-                .sorted(Comparator.comparingInt(DocScore::score).reversed())
-                .skip(Math.max(offset, 0))
-                .limit(Math.max(limit, 0))
-                .collect(Collectors.toList());
-
-        // Convertir a la estructura que devuelve la API (Map<String,Object>)
-        List<Map<String, Object>> ranked = rankedDocs.stream()
-                .map(ds -> {
-                    Map<String, Object> m = new HashMap<>();
-                    m.put("id", ds.id());
-                    m.put("score", ds.score());
-                    return m;
+                    return new SearchHit(docId, title, path, score);
                 })
+                .sorted(Comparator.comparingDouble(SearchHit::getScore).reversed())
+                .limit(limit)
                 .collect(Collectors.toList());
-
-
-        return Map.of(
-                "query", query,
-                "mode", mode,
-                "count", docs.size(),
-                "docs", ranked
-        );
     }
 
-    /** Devuelve los docs que contienen un término concreto. */
-    public Collection<String> docsForTerm(String term) {
-        Collection<String> c = invertedIndex.get(term.toLowerCase());
-        return c != null ? c : List.of();
-    }
-
-    /** Estadísticas simples del índice (nº de entradas y cluster name). */
-    public Map<String, Object> stats() {
-        // Nota: invertedIndex.size() devuelve número de entradas (term->docId), no nº de términos.
-        return Map.of(
-                "clusterName", client.getConfig().getClusterName(),
-                "map", "inverted-index",
-                "entries", invertedIndex.size()
-        );
-    }
-
-    /** Cerrar cliente Hazelcast. */
-    public void shutdown() {
-        client.shutdown();
-    }
-
-    /** Clase interna tipada para ranking (evita usar Map y Object durante sort). */
-    private static final class DocScore {
-        private final String id;
-        private final int score;
-        DocScore(String id, int score) { this.id = id; this.score = score; }
-        String id() { return id; }
-        int score() { return score; }
+    private List<String> tokenize(String queryText) {
+        return Arrays.stream(queryText
+                .toLowerCase(Locale.ROOT)
+                .split("\\W+"))
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toList());
     }
 }
