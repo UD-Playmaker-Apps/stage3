@@ -1,3 +1,4 @@
+
 version: "3.9"
 
 services:
@@ -11,6 +12,7 @@ services:
       - ACTIVEMQ_MIN_MEMORY=512
       - ACTIVEMQ_MAX_MEMORY=1024
 
+  # Miembro Hazelcast externo (opcional si NO quieres miembros embebidos)
   hazelcast:
     image: hazelcast/hazelcast:5.3
     container_name: hazelcast
@@ -60,20 +62,28 @@ services:
       - INDEXING_PORT=7003
       - BROKER_URL=tcp://activemq:61616
       - BROKER_QUEUE_INGESTED=document.ingested
-      - HAZELCAST_CLUSTER=search-cluster
-      - HAZELCAST_MEMBERS=hazelcast
-      - DATALAKE_ROOT=/data        # where ingestion volumes would be mounted in real setup
+      # Miembro Hazelcast embebido: sólo nombramos el cluster
+      - HZ_CLUSTER_NAME=search-cluster
+      # Si QUISIERAS que indexing fuese cliente (no recomendado aquí):
+      # - HZ_CLIENT_ADDRESSES=hazelcast:5701
+      # - Cambia el código a HazelcastClient en vez de Hazelcast.newHazelcastInstance()
+      - INGESTION_BASE=http://ingestion1:7001
     depends_on:
       - activemq
       - hazelcast
+    # Si añades health y status en indexing, puedes mapear puerto:
+    ports:
+      - "7003:7003"
 
   search1:
     build: ./search-service
     container_name: search1
     environment:
       - SEARCH_PORT=7004
-      - HAZELCAST_CLUSTER=search-cluster
-      - HAZELCAST_MEMBERS=hazelcast
+      - HZ_CLUSTER_NAME=search-cluster
+      - HZ_CLIENT_ADDRESSES=hazelcast:5701    # cliente apunta al miembro externo
+      # Alternativa si NO usas contenedor hazelcast:
+      # - HZ_CLIENT_ADDRESSES=indexing1:5701
     depends_on:
       - hazelcast
     ports:
