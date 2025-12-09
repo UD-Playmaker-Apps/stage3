@@ -9,18 +9,15 @@ import es.ulpgc.bigdata.ingestion.core.IngestionService;
 import es.ulpgc.bigdata.ingestion.core.IngestionStatus;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Exposes REST endpoints for the ingestion service.
- *
- * Clients (or the control module) call: - POST /ingest/{id} : start ingestion
- * for a document - GET /ingest/status/{id} : check ingestion progress - GET
- * /ingest/list : list documents stored locally
- *
- * Internal endpoint: - POST /internal/replica/{id} : receives replication from
- * peers
  */
 public class IngestionController {
+
+    private static final Logger log = LoggerFactory.getLogger(IngestionController.class);
 
     private final Javalin app;
     private final IngestionService ingestionService;
@@ -32,25 +29,31 @@ public class IngestionController {
 
     public void registerRoutes() {
 
-        // Start the ingestion pipeline for the given document
         app.post("/ingest/{id}", this::startIngestion);
-
-        // Query ingestion status (useful for debugging)
         app.get("/ingest/status/{id}", this::getStatus);
-
-        // Lists locally stored documents
         app.get("/ingest/list", this::listDocuments);
-
-        // Internal-only endpoint used for replication
         app.post("/internal/replica/{id}", this::receiveReplica);
-
-        // Optional health endpoint (recommended for Docker)
         app.get("/health", ctx -> ctx.result("OK"));
     }
 
     private void startIngestion(Context ctx) {
         String id = ctx.pathParam("id");
-        ingestionService.ingest(id);
+        IngestionStatus status = ingestionService.getStatus(id);
+        if (status == IngestionStatus.COMPLETED) {
+            ctx.status(409).result("Document already ingested: " + id);
+            return;
+        }
+
+        // Run ingestion asynchronously to avoid blocking HTTP thread.
+        // For simplicity we start a new thread (in production use an executor).
+        new Thread(() -> {
+            try {
+                ingestionService.ingest(id);
+            } catch (Exception e) {
+                log.error("Ingestion thread error for {}: {}", id, e.getMessage(), e);
+            }
+        }).start();
+
         ctx.status(202).result("Ingestion started for " + id);
     }
 
@@ -61,7 +64,7 @@ public class IngestionController {
     }
 
     private void listDocuments(Context ctx) {
-        Map<String, Path> docs = ingestionService.listDocuments();
+        var docs = ingestionService.listDocuments();
         DocumentInfoResponse[] resp = docs.entrySet().stream()
                 .map(e -> new DocumentInfoResponse(e.getKey(), e.getValue().toString()))
                 .toArray(DocumentInfoResponse[]::new);
@@ -71,11 +74,18 @@ public class IngestionController {
     /**
      * Receives replicated content from other ingestion nodes. IMPORTANT:
      * replicas must NOT republish ingestion events.
+     *
+     * Expected body: JSON { "header": "...", "body": "...", "sourceUrl": "..." }
      */
     private void receiveReplica(Context ctx) {
         String id = ctx.pathParam("id");
-        String content = ctx.body();
-        ingestionService.storeReplica(id, content);
-        ctx.status(201).result("Replica stored for " + id);
+        String body = ctx.body();
+        try {
+            ingestionService.storeReplicaFromJson(id, body);
+            ctx.status(201).result("Replica stored for " + id);
+        } catch (Exception e) {
+            log.error("Error storing replica {}: {}", id, e.getMessage(), e);
+            ctx.status(500).result("Failed to store replica: " + e.getMessage());
+        }
     }
 }

@@ -1,6 +1,9 @@
 package es.ulpgc.bigdata.ingestion.core;
 
 import java.util.List;
+import java.util.Map;
+
+import com.google.gson.Gson;
 
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -12,56 +15,53 @@ import org.slf4j.LoggerFactory;
 /**
  * Handles replication of documents between ingestion nodes.
  *
- * If replicationFactor = R, then for each document we send R-1 replicas to
- * other ingestion instances. This ensures redundancy and distributed storage
- * across the datalake.
+ * Sends JSON payload:
+ * {
+ *   "header": "...",
+ *   "body": "...",
+ *   "sourceUrl": "..."
+ * }
  */
 public class ReplicationManager {
 
     private static final Logger log = LoggerFactory.getLogger(ReplicationManager.class);
-
     private final List<String> peers;
     private final int replicationFactor;
+    private final Gson gson = new Gson();
 
     public ReplicationManager(List<String> peers, int replicationFactor) {
         this.peers = peers;
         this.replicationFactor = replicationFactor;
     }
 
-    /**
-     * Sends the document content to R-1 peers via HTTP POST.
-     *
-     * POST /internal/replica/{documentId}
-     *
-     * This endpoint stores the replica but does not trigger any new broker
-     * events.
-     */
-    public void replicate(String documentId, String content) {
-
-        // If R == 1 or no peers exist, no replication is needed.
-        if (peers.isEmpty() || replicationFactor <= 1) {
-            log.info("No replication configured (peers={}, R={})", peers.size(), replicationFactor);
+    public void replicate(String documentId, String header, String body, String sourceUrl) {
+        if (peers == null || peers.isEmpty() || replicationFactor <= 1) {
+            log.info("No replication configured (peers={}, R={})", peers == null ? 0 : peers.size(), replicationFactor);
             return;
         }
 
         int replicasNeeded = Math.min(replicationFactor - 1, peers.size());
         int replicasDone = 0;
 
+        Map<String, String> payload = Map.of(
+                "header", header == null ? "" : header,
+                "body", body == null ? "" : body,
+                "sourceUrl", sourceUrl == null ? "" : sourceUrl
+        );
+
         try (CloseableHttpClient client = HttpClients.createDefault()) {
 
             for (String peer : peers) {
-                if (replicasDone >= replicasNeeded) {
-                    break;
-                }
+                if (replicasDone >= replicasNeeded) break;
+                String url = peer.endsWith("/") ? peer + "internal/replica/" + documentId : peer + "/internal/replica/" + documentId;
 
-                String url = peer + "/internal/replica/" + documentId;
-
-                // Build POST request
                 HttpPost post = new HttpPost(url);
-                post.setHeader("Content-Type", "text/plain");
-                post.setEntity(new StringEntity(content));
+                post.setHeader("Content-Type", "application/json");
+                StringEntity entity = new StringEntity(gson.toJson(payload));
+                post.setEntity(entity);
 
-                log.info("Replicating {} to {}", documentId, url);
+                String p = url;
+                log.info("Replicating {} to {}", documentId, p);
 
                 client.execute(post, response -> {
                     int code = response.getCode();

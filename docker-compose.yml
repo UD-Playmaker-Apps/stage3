@@ -1,4 +1,3 @@
-
 version: "3.9"
 
 services:
@@ -6,13 +5,12 @@ services:
     image: rmohr/activemq:latest
     container_name: activemq
     ports:
-      - "61616:61616"   # JMS
-      - "8161:8161"     # Web console
+      - "61616:61616"
+      - "8161:8161"
     environment:
       - ACTIVEMQ_MIN_MEMORY=512
       - ACTIVEMQ_MAX_MEMORY=1024
 
-  # Miembro Hazelcast externo (opcional si NO quieres miembros embebidos)
   hazelcast:
     image: hazelcast/hazelcast:5.3
     container_name: hazelcast
@@ -62,16 +60,11 @@ services:
       - INDEXING_PORT=7003
       - BROKER_URL=tcp://activemq:61616
       - BROKER_QUEUE_INGESTED=document.ingested
-      # Miembro Hazelcast embebido: sólo nombramos el cluster
       - HZ_CLUSTER_NAME=search-cluster
-      # Si QUISIERAS que indexing fuese cliente (no recomendado aquí):
-      # - HZ_CLIENT_ADDRESSES=hazelcast:5701
-      # - Cambia el código a HazelcastClient en vez de Hazelcast.newHazelcastInstance()
       - INGESTION_BASE=http://ingestion1:7001
     depends_on:
       - activemq
       - hazelcast
-    # Si añades health y status en indexing, puedes mapear puerto:
     ports:
       - "7003:7003"
 
@@ -81,9 +74,7 @@ services:
     environment:
       - SEARCH_PORT=7004
       - HZ_CLUSTER_NAME=search-cluster
-      - HZ_CLIENT_ADDRESSES=hazelcast:5701    # cliente apunta al miembro externo
-      # Alternativa si NO usas contenedor hazelcast:
-      # - HZ_CLIENT_ADDRESSES=indexing1:5701
+      - HZ_CLIENT_ADDRESSES=hazelcast:5701
     depends_on:
       - hazelcast
     ports:
@@ -92,8 +83,7 @@ services:
   nginx:
     image: nginx:latest
     container_name: nginx
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    # ❗ Eliminado el volumen que creaba nginx.conf como carpeta
     ports:
       - "8080:8080"
     depends_on:

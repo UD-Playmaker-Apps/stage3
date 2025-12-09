@@ -5,18 +5,19 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Core service that performs the ingestion pipeline:
- *
- * 1) Download the document 2) Store it in the local datalake partition 3)
- * Replicate the document to R-1 other ingestion nodes 4) Publish an event to
- * the Message Broker so indexers can process it
- *
- * This service corresponds to the "Ingestion Service" in the Stage-3
- * architecture.
+ * 1) Download document via GutenbergDownloader
+ * 2) Store locally (header/body)
+ * 3) Replicate to R-1 peers (POST JSON)
+ * 4) Publish an event to the Message Broker
  */
 public class IngestionService {
 
@@ -27,28 +28,20 @@ public class IngestionService {
     private final ReplicationManager replicationManager;
     private final BrokerPublisher brokerPublisher;
 
-    // Tracks ingestion progress per document ID.
-    // This avoids duplicate work and helps debugging.
     private final Map<String, IngestionStatus> statusMap = new ConcurrentHashMap<>();
+    private final Gson gson = new Gson();
 
     public IngestionService(DatalakePartition datalake,
-            DocumentDownloader downloader,
-            ReplicationManager replicationManager,
-            BrokerPublisher brokerPublisher) {
+                            DocumentDownloader downloader,
+                            ReplicationManager replicationManager,
+                            BrokerPublisher brokerPublisher) {
         this.datalake = datalake;
         this.downloader = downloader;
         this.replicationManager = replicationManager;
         this.brokerPublisher = brokerPublisher;
     }
 
-    /**
-     * Executes the full ingestion lifecycle for a given document. This method
-     * is idempotent: if a document has already been processed, the service will
-     * skip redundant work.
-     */
     public void ingest(String documentId) {
-
-        // If already completed, do nothing (idempotent ingestion)
         IngestionStatus current = statusMap.get(documentId);
         if (current == IngestionStatus.COMPLETED) {
             log.info("Document {} already ingested. Skipping.", documentId);
@@ -58,48 +51,43 @@ public class IngestionService {
         statusMap.put(documentId, IngestionStatus.DOWNLOADING);
 
         try {
-            // 1) Download document content from external source
-            String content = downloader.download(documentId);
+            DocumentDownloader.DownloadResult dl = downloader.download(documentId);
 
-            // 2) Store locally in this node's datalake partition
             statusMap.put(documentId, IngestionStatus.STORING);
-            Path localPath = datalake.storeDocument(documentId, content);
+            Path localPath = datalake.storeDocument(documentId, dl.header, dl.body, dl.sourceUrl);
 
-            // 3) Send the document to R-1 peers so distributed datalake is maintained
             statusMap.put(documentId, IngestionStatus.REPLICATING);
-            replicationManager.replicate(documentId, content);
+            replicationManager.replicate(documentId, dl.header, dl.body, dl.sourceUrl);
 
-            // 4) Publish an event indicating that ingestion is complete
-            //    Indexing Services will consume this event
             statusMap.put(documentId, IngestionStatus.PUBLISHING_EVENT);
-            brokerPublisher.publishDocumentIngested(documentId, localPath.toString());
+            brokerPublisher.publishDocumentIngested(documentId, localPath.toString(), dl.sourceUrl);
 
-            // Ingestion completed successfully
             statusMap.put(documentId, IngestionStatus.COMPLETED);
 
         } catch (IOException e) {
             log.error("I/O error ingesting {}: {}", documentId, e.getMessage(), e);
             statusMap.put(documentId, IngestionStatus.FAILED);
+            throw new RuntimeException(e);
         } catch (RuntimeException e) {
             log.error("Unexpected error ingesting {}: {}", documentId, e.getMessage(), e);
             statusMap.put(documentId, IngestionStatus.FAILED);
+            throw e;
         }
     }
 
     /**
-     * Called by peer ingestion nodes to store a replica. Note: replica storage
-     * must NOT publish another event to the broker, otherwise infinite loops
-     * would occur.
+     * Receives replica JSON posted by a peer.
+     * JSON expected: { "header": "...", "body": "...", "sourceUrl": "..." }
      */
-    public void storeReplica(String documentId, String content) {
+    public void storeReplicaFromJson(String documentId, String jsonPayload) {
         try {
-            datalake.storeDocument(documentId, content);
-        } catch (IOException e) {
-            log.error("I/O error storing replica for {}: {}", documentId, e.getMessage(), e);
-            throw new RuntimeException(e);
-        } catch (RuntimeException e) {
-            log.error("Unexpected error storing replica for {}: {}", documentId, e.getMessage(), e);
-            throw e;
+            JsonObject obj = JsonParser.parseString(jsonPayload).getAsJsonObject();
+            String header = obj.has("header") ? obj.get("header").getAsString() : "";
+            String body = obj.has("body") ? obj.get("body").getAsString() : "";
+            String sourceUrl = obj.has("sourceUrl") ? obj.get("sourceUrl").getAsString() : "";
+            datalake.storeReplica(documentId, header, body, sourceUrl);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to store replica: " + e.getMessage(), e);
         }
     }
 

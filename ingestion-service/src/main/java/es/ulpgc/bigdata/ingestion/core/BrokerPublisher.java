@@ -1,7 +1,7 @@
 package es.ulpgc.bigdata.ingestion.core;
 
 import javax.jms.Connection;
-import javax.jms.ConnectionFactory; // ActiveMQ 5.x uses javax.jms, not jakarta.jms
+import javax.jms.ConnectionFactory;
 import javax.jms.Destination;
 import javax.jms.JMSException;
 import javax.jms.MessageProducer;
@@ -16,12 +16,6 @@ import com.google.gson.JsonObject;
 
 /**
  * Publishes ingestion events to ActiveMQ.
- *
- * This is what enables the event-driven, decoupled architecture: Ingestion -->
- * Broker --> Indexers
- *
- * Indexers will listen for "document.ingested" events and process the new
- * documents asynchronously.
  */
 public class BrokerPublisher implements AutoCloseable {
 
@@ -33,39 +27,23 @@ public class BrokerPublisher implements AutoCloseable {
 
     public BrokerPublisher(String brokerUrl, String queueName) {
         try {
-            // Create a JMS connection to ActiveMQ
             ConnectionFactory factory = new ActiveMQConnectionFactory(brokerUrl);
             this.connection = factory.createConnection();
             this.connection.start();
-
-            // Create a session with automatic acknowledgement
             this.session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-
-            // Destination = queue where messages will be sent
             Destination queue = session.createQueue(queueName);
-
-            // Producer that sends messages into the queue
             this.producer = session.createProducer(queue);
-
         } catch (JMSException e) {
             throw new RuntimeException("Failed to create BrokerPublisher", e);
         }
     }
 
-    /**
-     * Publishes the "DOCUMENT_INGESTED" event to ActiveMQ.
-     *
-     * The event includes: - documentId - local path to the document in datalake
-     * - timestamp
-     *
-     * Indexers will consume this event and update the distributed in-memory
-     * inverted index.
-     */
-    public void publishDocumentIngested(String documentId, String localPath) {
+    public void publishDocumentIngested(String documentId, String localPath, String sourceUrl) {
         try {
             JsonObject payload = new JsonObject();
             payload.addProperty("documentId", documentId);
             payload.addProperty("path", localPath);
+            payload.addProperty("sourceUrl", sourceUrl);
             payload.addProperty("eventType", "DOCUMENT_INGESTED");
             payload.addProperty("timestamp", System.currentTimeMillis());
 
@@ -81,8 +59,14 @@ public class BrokerPublisher implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
-        producer.close();
-        session.close();
-        connection.close();
+        try {
+            if (producer != null) producer.close();
+        } catch (JMSException ignored) {}
+        try {
+            if (session != null) session.close();
+        } catch (JMSException ignored) {}
+        try {
+            if (connection != null) connection.close();
+        } catch (JMSException ignored) {}
     }
 }

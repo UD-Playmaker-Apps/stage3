@@ -1,8 +1,9 @@
+FROM eclipse-temurin:17-jdk-jammy
 
-# indexing-service/Dockerfile
-FROM eclipse-temurin:17-jdk-alpine
 WORKDIR /app
-COPY target/indexing-service-1.0.0-shaded.jar app.jar
-ENV JAVA_OPTS=""
-EXPOSE 7002
-ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar app.jar"]
+
+COPY target/indexing-service-1.0-SNAPSHOT.jar /app/indexing-service.jar
+
+EXPOSE 7003
+
+ENTRYPOINT ["java", "-jar", "/app/indexing-service.jar"]
