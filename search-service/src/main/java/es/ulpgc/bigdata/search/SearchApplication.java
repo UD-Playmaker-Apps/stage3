@@ -12,23 +12,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 
-/**
- * Main class for the search-service microservice.
- *
- * Responsibilities: - Start Javalin HTTP server. - Connect to the Hazelcast
- * cluster (via HazelcastClientProvider). - Expose REST endpoints to search the
- * distributed index.
- *
- * Endpoints: GET /health GET /search?q=<query>&limit=<n>
- */
+
 public class SearchApplication {
 
     private static final Logger log = LoggerFactory.getLogger(SearchApplication.class);
-
     private static final Gson gson = new Gson();
 
     public static void main(String[] args) {
+
         int port = resolvePort();
 
         HazelcastInstance hazelcast = HazelcastClientProvider.getInstance();
@@ -38,44 +31,41 @@ public class SearchApplication {
             config.http.defaultContentType = "application/json";
         });
 
-        // Health check for Docker and Compose
-        app.get("/health", ctx -> ctx.json("{\"status\":\"UP\"}"));
+        app.get("/health", ctx -> ctx.json(Map.of("status", "UP")));
 
-        // Search endpoint
         app.get("/search", ctx -> handleSearch(ctx, searchEngine));
 
         app.exception(Exception.class, (e, ctx) -> {
             log.error("Unhandled exception", e);
-            ctx.status(500).json("{\"error\":\"internal server error\"}");
+            ctx.status(500).result("{\"error\":\"internal server error\"}");
         });
 
         app.events(events -> events.serverStopped(HazelcastClientProvider::shutdown));
 
         app.start(port);
-        log.info("search-service started on port {}", port);
+        log.info("Search-service started on port {}", port);
     }
 
     private static int resolvePort() {
-        String envPort = System.getenv("SEARCH_SERVICE_PORT");
+        String envPort = System.getenv("SEARCH_PORT");
+
         if (envPort != null && !envPort.isBlank()) {
             try {
                 return Integer.parseInt(envPort);
-            } catch (NumberFormatException ignored) {
-                // fallback to default
-            }
+            } catch (NumberFormatException ignored) {}
         }
-        return 8082; // default; match this in docker-compose
+        return 8082;
     }
 
     private static void handleSearch(Context ctx, SearchEngine searchEngine) {
         String query = ctx.queryParam("q");
+
         if (query == null || query.isBlank()) {
-            ctx.status(400).json("{\"error\":\"Missing 'q' query parameter\"}");
+            ctx.status(400).result("{\"error\":\"Missing 'q' query parameter\"}");
             return;
         }
 
-        int limit = ctx.queryParamAsClass("limit", Integer.class)
-                .getOrDefault(10);
+        int limit = ctx.queryParamAsClass("limit", Integer.class).getOrDefault(10);
 
         List<SearchHit> hits = searchEngine.search(query, limit);
         SearchResponse response = new SearchResponse(query, hits);

@@ -75,12 +75,13 @@ services:
     container_name: search1
     environment:
       - SEARCH_PORT=7004
-      - HZ_CLUSTER_NAME=search-cluster
-      - HZ_CLIENT_ADDRESSES=hazelcast:5701
+      - HAZELCAST_CLUSTER_NAME=search-cluster
+      - HAZELCAST_CLUSTER_ADDRESS=hazelcast:5701
     depends_on:
       - hazelcast
     ports:
       - "7004:7004"
+
 
   nginx:
     image: nginx:latest
