@@ -25,7 +25,6 @@ public class MetadataFetcher {
             String url = "https://www.gutenberg.org/ebooks/" + id;
             Document doc = Jsoup.connect(url).get();
 
-            // Título y autor desde <h1>
             String title = "Unknown";
             String author = "Unknown";
 
@@ -36,7 +35,6 @@ public class MetadataFetcher {
                 if (parts.length > 1) author = clean(parts[1]);
             }
 
-            // Idioma y release date desde table.bibrec
             String language = "Unknown";
             String releaseDate = "";
 
