@@ -1,65 +1,51 @@
 package es.ulpgc.bigdata.ingestion;
 
+import es.ulpgc.bigdata.ingestion.api.IngestionController;
+import es.ulpgc.bigdata.ingestion.core.*;
+import io.javalin.Javalin;
+import io.javalin.json.JavalinJackson;
+
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
-import es.ulpgc.bigdata.ingestion.api.IngestionController;
-import es.ulpgc.bigdata.ingestion.core.BrokerPublisher;
-import es.ulpgc.bigdata.ingestion.core.DatalakePartition;
-import es.ulpgc.bigdata.ingestion.core.DocumentDownloader;
-import es.ulpgc.bigdata.ingestion.core.IngestionService;
-import es.ulpgc.bigdata.ingestion.core.ReplicationManager;
-import io.javalin.Javalin;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 public class IngestionApplication {
-
-    private static final Logger log = LoggerFactory.getLogger(IngestionApplication.class);
 
     public static void main(String[] args) {
 
-        int port = Integer.parseInt(System.getenv().getOrDefault("INGESTION_PORT", "7001"));
-        String datalakeDir = System.getenv().getOrDefault("DATALAKE_DIR", "./datalake");
-        int replicationFactor = Integer.parseInt(System.getenv().getOrDefault("REPLICATION_FACTOR", "2"));
+        String datalakeDir = System.getenv().getOrDefault("DATALAKE_DIR", "/data/datalake");
         String peersEnv = System.getenv().getOrDefault("INGESTION_PEERS", "");
+        int replicationFactor = Integer.parseInt(System.getenv().getOrDefault("REPLICATION_FACTOR", "2"));
         String brokerUrl = System.getenv().getOrDefault("BROKER_URL", "tcp://activemq:61616");
-        String queueName = System.getenv().getOrDefault("BROKER_QUEUE_INGESTED", "document.ingested");
+        String queueName = System.getenv().getOrDefault("BROKER_QUEUE", "document.ingested");
+        int port = Integer.parseInt(System.getenv().getOrDefault("INGESTION_PORT", "7001"));
 
         List<String> peers = peersEnv.isBlank()
                 ? List.of()
-                : Arrays.stream(peersEnv.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
-
-        log.info("Starting Ingestion Service on port {}", port);
-        log.info("Datalake dir: {}", datalakeDir);
-        log.info("Replication factor R = {}", replicationFactor);
-        log.info("Peers: {}", peers);
-        log.info("Broker URL: {}, queue: {}", brokerUrl, queueName);
+                : Arrays.stream(peersEnv.split(",")).map(String::trim).toList();
 
         DatalakePartition datalake = new DatalakePartition(Path.of(datalakeDir));
         DocumentDownloader downloader = new DocumentDownloader();
+        MetadataFetcher metadataFetcher = new MetadataFetcher();
         ReplicationManager replicationManager = new ReplicationManager(peers, replicationFactor);
         BrokerPublisher brokerPublisher = new BrokerPublisher(brokerUrl, queueName);
 
-        IngestionService ingestionService = new IngestionService(
-                datalake, downloader, replicationManager, brokerPublisher
-        );
+        IngestionService ingestionService =
+                new IngestionService(datalake, downloader, metadataFetcher, replicationManager, brokerPublisher);
 
+        // ✅ JSON mapper correcto para Javalin 5
         Javalin app = Javalin.create(config -> {
-            config.showJavalinBanner = false;
+            config.jsonMapper(new JavalinJackson());
         });
 
         new IngestionController(app, ingestionService).registerRoutes();
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                brokerPublisher.close();
-            } catch (Exception ignored) {}
-        }));
+
+        app.get("/ingest/raw/{id}", ctx -> {
+            var doc = datalake.readDocumentWithMetadata(ctx.pathParam("id"));
+            if (doc == null) ctx.status(404).result("Not found");
+            else ctx.json(doc);
+        });
+
         app.start(port);
     }
 }

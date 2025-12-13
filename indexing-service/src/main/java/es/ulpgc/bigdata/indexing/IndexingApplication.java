@@ -4,6 +4,7 @@ import es.ulpgc.bigdata.indexing.api.IndexingStatusController;
 import es.ulpgc.bigdata.indexing.index.HazelcastIndexProvider;
 import es.ulpgc.bigdata.indexing.messaging.JmsIndexingConsumer;
 import io.javalin.Javalin;
+import org.apache.activemq.ActiveMQConnectionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,17 +13,18 @@ import javax.jms.ConnectionFactory;
 import javax.jms.Destination;
 import javax.jms.MessageConsumer;
 import javax.jms.Session;
-import org.apache.activemq.ActiveMQConnectionFactory;
 
 public class IndexingApplication {
+
     private static final Logger log = LoggerFactory.getLogger(IndexingApplication.class);
 
     public static void main(String[] args) throws Exception {
+
         String clusterName = System.getenv().getOrDefault("HZ_CLUSTER_NAME", "search-cluster");
         int backupCount = Integer.parseInt(System.getenv().getOrDefault("HZ_BACKUP_COUNT", "2"));
-        int asyncBackup = Integer.parseInt(System.getenv().getOrDefault("HZ_ASYNC_BACKUP_COUNT", "1"));
+        int asyncBackupCount = Integer.parseInt(System.getenv().getOrDefault("HZ_ASYNC_BACKUP_COUNT", "1"));
 
-        HazelcastIndexProvider indexProvider = new HazelcastIndexProvider(clusterName, backupCount, asyncBackup);
+        HazelcastIndexProvider indexProvider = new HazelcastIndexProvider(clusterName, backupCount, asyncBackupCount);
 
         String brokerUrl = System.getenv().getOrDefault("BROKER_URL", "tcp://activemq:61616");
         String queueName = System.getenv().getOrDefault("BROKER_QUEUE_INGESTED", "document.ingested");
@@ -43,10 +45,14 @@ public class IndexingApplication {
         app.start(port);
 
         log.info("Indexing Service started on port {}", port);
-        log.info("Broker: {}, queue: {}", brokerUrl, queueName);
+        log.info("Connected to Broker: {} queue: {}", brokerUrl, queueName);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try { consumer.close(); session.close(); connection.close(); } catch (Exception ignore) {}
+            try {
+                consumer.close();
+                session.close();
+                connection.close();
+            } catch (Exception ignore) {}
             indexProvider.shutdown();
             app.stop();
         }));

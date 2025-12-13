@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 public final class TextTokenizer {
+
     private static final Pattern SPLIT = Pattern.compile("[^\\p{L}\\p{Nd}]+");
 
     public static List<String> tokens(String text) {

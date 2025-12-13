@@ -1,10 +1,8 @@
 package es.ulpgc.bigdata.search;
 
-import com.google.gson.Gson;
 import com.hazelcast.core.HazelcastInstance;
 import es.ulpgc.bigdata.search.core.HazelcastClientProvider;
 import es.ulpgc.bigdata.search.core.SearchEngine;
-import es.ulpgc.bigdata.search.model.SearchHit;
 import es.ulpgc.bigdata.search.model.SearchResponse;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -14,11 +12,9 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Map;
 
-
 public class SearchApplication {
 
     private static final Logger log = LoggerFactory.getLogger(SearchApplication.class);
-    private static final Gson gson = new Gson();
 
     public static void main(String[] args) {
 
@@ -29,15 +25,22 @@ public class SearchApplication {
 
         Javalin app = Javalin.create(config -> {
             config.http.defaultContentType = "application/json";
+            config.showJavalinBanner = false;
         });
 
         app.get("/health", ctx -> ctx.json(Map.of("status", "UP")));
 
         app.get("/search", ctx -> handleSearch(ctx, searchEngine));
 
+        app.get("/index/terms/{term}", ctx -> {
+            String term = ctx.pathParam("term");
+            var hits = searchEngine.searchTerm(term);
+            ctx.json(hits);
+        });
+
         app.exception(Exception.class, (e, ctx) -> {
             log.error("Unhandled exception", e);
-            ctx.status(500).result("{\"error\":\"internal server error\"}");
+            ctx.status(500).json(Map.of("error", "internal server error"));
         });
 
         app.events(events -> events.serverStopped(HazelcastClientProvider::shutdown));
@@ -48,7 +51,6 @@ public class SearchApplication {
 
     private static int resolvePort() {
         String envPort = System.getenv("SEARCH_PORT");
-
         if (envPort != null && !envPort.isBlank()) {
             try {
                 return Integer.parseInt(envPort);
@@ -59,17 +61,15 @@ public class SearchApplication {
 
     private static void handleSearch(Context ctx, SearchEngine searchEngine) {
         String query = ctx.queryParam("q");
-
         if (query == null || query.isBlank()) {
-            ctx.status(400).result("{\"error\":\"Missing 'q' query parameter\"}");
+            ctx.status(400).json(Map.of("error", "Missing 'q' query parameter"));
             return;
         }
 
         int limit = ctx.queryParamAsClass("limit", Integer.class).getOrDefault(10);
 
-        List<SearchHit> hits = searchEngine.search(query, limit);
-        SearchResponse response = new SearchResponse(query, hits);
+        List<?> hits = searchEngine.search(query, limit);
 
-        ctx.status(200).result(gson.toJson(response));
+        ctx.status(200).json(new SearchResponse(query, (List) hits));
     }
 }

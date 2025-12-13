@@ -20,22 +20,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Collection;
 
-/**
- * Consumidor JMS que procesa eventos "document.ingested":
- * - Intenta leer el contenido desde path local.
- * - Si falla, hace fallback a GET /ingest/raw/{id} del Ingestion Service.
- * - Tokeniza y actualiza la MultiMap "inverted-index".
- */
 public class JmsIndexingConsumer implements MessageListener {
-    private static final Logger log = LoggerFactory.getLogger(JmsIndexingConsumer.class);
 
+    private static final Logger log = LoggerFactory.getLogger(JmsIndexingConsumer.class);
     private final HazelcastIndexProvider indexProvider;
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(3))
-            .build();
-    private final String ingestionBase =
-            System.getenv().getOrDefault("INGESTION_BASE", "http://ingestion1:7001");
+    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+    private final String ingestionBase = System.getenv().getOrDefault("INGESTION_BASE", "http://ingestion1:7001");
+    private final Gson gson = new Gson();
 
     public JmsIndexingConsumer(HazelcastIndexProvider indexProvider) {
         this.indexProvider = indexProvider;
@@ -44,32 +37,63 @@ public class JmsIndexingConsumer implements MessageListener {
     @Override
     public void onMessage(Message message) {
         try {
-            if (message instanceof TextMessage tm) {
-                JsonObject ev = JsonParser.parseString(tm.getText()).getAsJsonObject();
-                String id = ev.get("documentId").getAsString();
-                String path = ev.has("path") ? ev.get("path").getAsString() : null;
-
-                String content = tryReadLocal(path);
-                if (content == null) content = fetchFromIngestion(id);
-
-                for (String term : TextTokenizer.tokens(content)) {
-                    if (!indexProvider.invertedIndex().containsEntry(term, id)) {
-                        indexProvider.invertedIndex().put(term, id);
-                    }
-                }
-                log.info("Indexed {}", id);
+            if (!(message instanceof TextMessage tm)) {
+                log.warn("Unsupported JMS message type: {}", message.getClass());
+                return;
             }
+
+            JsonObject ev = JsonParser.parseString(tm.getText()).getAsJsonObject();
+            String id = ev.has("documentId") ? ev.get("documentId").getAsString() : null;
+            String path = ev.has("path") && !ev.get("path").isJsonNull() ? ev.get("path").getAsString() : null;
+
+            if (id == null || id.isBlank()) {
+                log.warn("Received event without documentId: {}", ev);
+                return;
+            }
+
+            if (indexProvider.indexedDocs().contains(id)) {
+                log.info("Skipping already-indexed {}", id);
+                return;
+            }
+
+            String content = tryReadLocal(path);
+            if (content == null) {
+                content = fetchFromIngestion(id);
+            }
+
+            if (content == null || content.isBlank()) {
+                log.warn("Empty content for {}, skipping", id);
+                return;
+            }
+
+            for (String term : TextTokenizer.tokens(content)) {
+                indexProvider.invertedIndex().put(term, id);
+            }
+            indexProvider.indexedDocs().add(id);
+            log.info("Indexed {}", id);
+
         } catch (Exception e) {
             log.error("Indexing failed: {}", e.getMessage(), e);
         }
     }
 
     private String tryReadLocal(String path) {
-        if (path == null) return null;
+        if (path == null || path.isBlank()) return null;
         try {
-            return Files.readString(Path.of(path, "body.txt"), StandardCharsets.UTF_8);
+            Path p = Path.of(path);
+            if (Files.isDirectory(p)) {
+                Path body = p.resolve("body.txt");
+                if (Files.exists(body)) return Files.readString(body, StandardCharsets.UTF_8);
+                Path doc = p.resolve("document.txt");
+                if (Files.exists(doc)) return Files.readString(doc, StandardCharsets.UTF_8);
+                return null;
+            } else if (Files.exists(p)) {
+                return Files.readString(p, StandardCharsets.UTF_8);
+            } else {
+                return null;
+            }
         } catch (Exception e) {
-            log.warn("Local path not readable: {} ({})", path, e.getMessage());
+            log.warn("Local read failed for {}: {}", path, e.getMessage());
             return null;
         }
     }
@@ -78,15 +102,20 @@ public class JmsIndexingConsumer implements MessageListener {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(ingestionBase + "/ingest/raw/" + id))
                     .timeout(Duration.ofSeconds(5))
+                    .GET()
                     .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (res.statusCode() == 200) {
-                DocumentContent doc = new Gson().fromJson(res.body(), DocumentContent.class);
-                return doc.header + "\n" + doc.body;
+            if (res.statusCode() == 200 && res.body() != null && !res.body().isBlank()) {
+                DocumentContent doc = gson.fromJson(res.body(), DocumentContent.class);
+                String header = doc.header == null ? "" : doc.header;
+                String body = doc.body == null ? "" : doc.body;
+                return (header + "\n" + body).trim();
+            } else {
+                log.warn("Ingestion returned {} when fetching {}", res.statusCode(), id);
             }
         } catch (Exception e) {
             log.error("Error fetching {} from ingestion: {}", id, e.getMessage());
         }
-        throw new RuntimeException("Cannot load content for " + id);
+        return null;
     }
 }

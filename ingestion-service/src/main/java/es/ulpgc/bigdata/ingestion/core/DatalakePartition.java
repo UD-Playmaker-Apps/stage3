@@ -1,35 +1,17 @@
 package es.ulpgc.bigdata.ingestion.core;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.*;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
 
-import com.google.gson.Gson;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-/**
- * Represents the local partition of the distributed datalake.
- *
- * Stores each document as:
- *   datalake/docs/<documentId>/header.txt
- *   datalake/docs/<documentId>/body.txt
- *
- * Also keeps a small ingestion log: ingestion-log.json
- */
 public class DatalakePartition {
-
-    private static final Logger log = LoggerFactory.getLogger(DatalakePartition.class);
 
     private final Path rootDir;
     private final Path docsDir;
@@ -50,69 +32,125 @@ public class DatalakePartition {
         }
     }
 
-    /**
-     * Store header and body under datalake/docs/<documentId>/header.txt & body.txt
-     * Returns the Path to the document folder.
-     */
-    public Path storeDocument(String documentId, String header, String body, String sourceUrl) throws IOException {
+    public Path storeDocument(String documentId, String header, String body, String sourceUrl,
+                              String title, String author, String language, String releaseDate) throws IOException {
+
         Path docDir = docsDir.resolve(documentId);
         Files.createDirectories(docDir);
 
         Path headerFile = docDir.resolve("header.txt");
         Path bodyFile = docDir.resolve("body.txt");
+        Path metadataFile = docDir.resolve("metadata.json");
 
         Files.writeString(headerFile, header == null ? "" : header, StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         Files.writeString(bodyFile, body == null ? "" : body, StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-        // Update ingestion log
         Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("path", docDir.toString());
+        meta.put("id", documentId);
+        meta.put("title", title);
+        meta.put("author", author);
+        meta.put("language", language);
+        meta.put("releaseDate", releaseDate);
         meta.put("sourceUrl", sourceUrl);
         meta.put("timestamp", ZonedDateTime.now(ZoneId.systemDefault()).toString());
+        meta.put("path", docDir.toString());
+
+        Files.writeString(metadataFile, gson.toJson(meta), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
         updateLog(documentId, meta);
 
-        log.info("Stored document {} at {}", documentId, docDir.toAbsolutePath());
         return docDir;
     }
 
-    /**
-     * Store replica by accepting header/body; same as storeDocument but does not publish events.
-     */
-    public Path storeReplica(String documentId, String header, String body, String sourceUrl) throws IOException {
-        return storeDocument(documentId, header, body, sourceUrl);
+    public Path storeReplica(String documentId, String header, String body, String sourceUrl,
+                             Map<String, Object> incomingMetadata) throws IOException {
+
+        Path docDir = docsDir.resolve(documentId);
+        Files.createDirectories(docDir);
+
+        Path headerFile = docDir.resolve("header.txt");
+        Path bodyFile = docDir.resolve("body.txt");
+        Path metadataFile = docDir.resolve("metadata.json");
+
+        Files.writeString(headerFile, header == null ? "" : header, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        Files.writeString(bodyFile, body == null ? "" : body, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        if (incomingMetadata != null && !incomingMetadata.isEmpty()) {
+            meta.putAll(incomingMetadata);
+        }
+        meta.put("path", docDir.toString());
+        if (!meta.containsKey("id")) meta.put("id", documentId);
+        if (!meta.containsKey("timestamp")) {
+            meta.put("timestamp", ZonedDateTime.now(ZoneId.systemDefault()).toString());
+        }
+        if (!meta.containsKey("sourceUrl")) meta.put("sourceUrl", sourceUrl == null ? "" : sourceUrl);
+
+        Files.writeString(metadataFile, gson.toJson(meta), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+        updateLog(documentId, meta);
+
+        return docDir;
     }
 
     public Map<String, Path> listDocuments() {
-        if (!Files.exists(docsDir)) {
-            return Collections.emptyMap();
-        }
-
+        if (!Files.exists(docsDir)) return Collections.emptyMap();
         Map<String, Path> result = new HashMap<>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(docsDir)) {
             for (Path p : stream) {
                 if (Files.isDirectory(p)) {
-                    String id = p.getFileName().toString();
-                    result.put(id, p);
+                    result.put(p.getFileName().toString(), p);
                 }
             }
-        } catch (IOException e) {
-            log.error("Error listing documents: {}", e.getMessage(), e);
-        }
+        } catch (IOException ignored) {}
         return result;
+    }
+
+    public Map<String, Object> readDocumentWithMetadata(String documentId) {
+        Path docDir = docsDir.resolve(documentId);
+        if (!Files.exists(docDir) || !Files.isDirectory(docDir)) return null;
+
+        try {
+            Path bodyFile = docDir.resolve("body.txt");
+            Path metadataFile = docDir.resolve("metadata.json");
+
+            String body = Files.exists(bodyFile)
+                    ? Files.readString(bodyFile, StandardCharsets.UTF_8)
+                    : "";
+
+            Map<String, Object> meta = new LinkedHashMap<>();
+            if (Files.exists(metadataFile)) {
+                String raw = Files.readString(metadataFile, StandardCharsets.UTF_8);
+                Type type = new TypeToken<Map<String, Object>>(){}.getType();
+                Map<String, Object> parsed = gson.fromJson(raw, type);
+                if (parsed != null) meta.putAll(parsed);
+            }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("metadata", meta);
+            result.put("body", body);
+            return result;
+
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     private synchronized void updateLog(String documentId, Map<String, Object> meta) {
         try {
             String raw = Files.readString(logFile, StandardCharsets.UTF_8);
-            Map<String, Object> db = gson.fromJson(raw, Map.class);
+            Type type = new TypeToken<Map<String, Object>>(){}.getType();
+            Map<String, Object> db = gson.fromJson(raw, type);
             if (db == null) db = new LinkedHashMap<>();
             db.put(documentId, meta);
-            String out = gson.toJson(db);
-            Files.writeString(logFile, out, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
-        } catch (IOException e) {
-            log.error("Failed to update ingestion log: {}", e.getMessage(), e);
-        }
+            Files.writeString(logFile, gson.toJson(db), StandardCharsets.UTF_8,
+                    StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException ignored) {}
     }
 }

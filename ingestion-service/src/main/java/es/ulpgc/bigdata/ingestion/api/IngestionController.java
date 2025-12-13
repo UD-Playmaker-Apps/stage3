@@ -1,20 +1,18 @@
 package es.ulpgc.bigdata.ingestion.api;
 
-import java.nio.file.Path;
 import java.util.Map;
 
 import es.ulpgc.bigdata.ingestion.api.dto.DocumentInfoResponse;
 import es.ulpgc.bigdata.ingestion.api.dto.IngestionStatusResponse;
 import es.ulpgc.bigdata.ingestion.core.IngestionService;
 import es.ulpgc.bigdata.ingestion.core.IngestionStatus;
+
 import io.javalin.Javalin;
 import io.javalin.http.Context;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Exposes REST endpoints for the ingestion service.
- */
 public class IngestionController {
 
     private static final Logger log = LoggerFactory.getLogger(IngestionController.class);
@@ -28,7 +26,6 @@ public class IngestionController {
     }
 
     public void registerRoutes() {
-
         app.post("/ingest/{id}", this::startIngestion);
         app.get("/ingest/status/{id}", this::getStatus);
         app.get("/ingest/list", this::listDocuments);
@@ -44,8 +41,6 @@ public class IngestionController {
             return;
         }
 
-        // Run ingestion asynchronously to avoid blocking HTTP thread.
-        // For simplicity we start a new thread (in production use an executor).
         new Thread(() -> {
             try {
                 ingestionService.ingest(id);
@@ -64,19 +59,13 @@ public class IngestionController {
     }
 
     private void listDocuments(Context ctx) {
-        var docs = ingestionService.listDocuments();
+        Map<String, ?> docs = ingestionService.listDocuments();
         DocumentInfoResponse[] resp = docs.entrySet().stream()
                 .map(e -> new DocumentInfoResponse(e.getKey(), e.getValue().toString()))
                 .toArray(DocumentInfoResponse[]::new);
         ctx.json(resp);
     }
 
-    /**
-     * Receives replicated content from other ingestion nodes. IMPORTANT:
-     * replicas must NOT republish ingestion events.
-     *
-     * Expected body: JSON { "header": "...", "body": "...", "sourceUrl": "..." }
-     */
     private void receiveReplica(Context ctx) {
         String id = ctx.pathParam("id");
         String body = ctx.body();

@@ -1,25 +1,11 @@
 package es.ulpgc.bigdata.ingestion.core;
 
-import javax.jms.Connection;
-import javax.jms.ConnectionFactory;
-import javax.jms.Destination;
-import javax.jms.JMSException;
-import javax.jms.MessageProducer;
-import javax.jms.Session;
-import javax.jms.TextMessage;
-
-import org.apache.activemq.ActiveMQConnectionFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.google.gson.JsonObject;
+import org.apache.activemq.ActiveMQConnectionFactory;
 
-/**
- * Publishes ingestion events to ActiveMQ.
- */
+import javax.jms.*;
+
 public class BrokerPublisher implements AutoCloseable {
-
-    private static final Logger log = LoggerFactory.getLogger(BrokerPublisher.class);
 
     private final Connection connection;
     private final Session session;
@@ -49,24 +35,13 @@ public class BrokerPublisher implements AutoCloseable {
 
             TextMessage message = session.createTextMessage(payload.toString());
             producer.send(message);
-
-            log.info("Published DOCUMENT_INGESTED for {}", documentId);
-
-        } catch (JMSException e) {
-            log.error("Error publishing event for {}: {}", documentId, e.getMessage(), e);
-        }
+        } catch (JMSException ignored) {}
     }
 
     @Override
     public void close() throws Exception {
-        try {
-            if (producer != null) producer.close();
-        } catch (JMSException ignored) {}
-        try {
-            if (session != null) session.close();
-        } catch (JMSException ignored) {}
-        try {
-            if (connection != null) connection.close();
-        } catch (JMSException ignored) {}
+        try { if (producer != null) producer.close(); } catch (JMSException ignored) {}
+        try { if (session != null) session.close(); } catch (JMSException ignored) {}
+        try { if (connection != null) connection.close(); } catch (JMSException ignored) {}
     }
 }

@@ -1,9 +1,5 @@
 package es.ulpgc.bigdata.search.model;
 
-/**
- * A single document returned by the search endpoint, including its aggregated
- * score for the query.
- */
 public class SearchHit {
 
     private String documentId;
@@ -18,19 +14,8 @@ public class SearchHit {
         this.score = score;
     }
 
-    public String getDocumentId() {
-        return documentId;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getPath() {
-        return path;
-    }
-
-    public double getScore() {
-        return score;
-    }
+    public String getDocumentId() { return documentId; }
+    public String getTitle() { return title; }
+    public String getPath() { return path; }
+    public double getScore() { return score; }
 }

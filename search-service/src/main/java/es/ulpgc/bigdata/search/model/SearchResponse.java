@@ -2,9 +2,6 @@ package es.ulpgc.bigdata.search.model;
 
 import java.util.List;
 
-/**
- * JSON payload returned by /search.
- */
 public class SearchResponse {
 
     private String query;
@@ -17,15 +14,7 @@ public class SearchResponse {
         this.totalHits = hits.size();
     }
 
-    public String getQuery() {
-        return query;
-    }
-
-    public int getTotalHits() {
-        return totalHits;
-    }
-
-    public List<SearchHit> getHits() {
-        return hits;
-    }
+    public String getQuery() { return query; }
+    public int getTotalHits() { return totalHits; }
+    public List<SearchHit> getHits() { return hits; }
 }

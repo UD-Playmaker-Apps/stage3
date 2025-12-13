@@ -8,80 +8,93 @@ services:
       - "61616:61616"
       - "8161:8161"
     environment:
-      - ACTIVEMQ_MIN_MEMORY=512
-      - ACTIVEMQ_MAX_MEMORY=1024
+      ACTIVEMQ_MIN_MEMORY: 512
+      ACTIVEMQ_MAX_MEMORY: 1024
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8161"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   hazelcast:
     image: hazelcast/hazelcast:5.3
     container_name: hazelcast
     environment:
-      - HZ_CLUSTERNAME=search-cluster
+      HZ_CLUSTERNAME: search-cluster
     ports:
       - "5701:5701"
 
   ingestion1:
     build: ./ingestion-service
     container_name: ingestion1
+    restart: always
     environment:
-      - INGESTION_PORT=7001
-      - DATALAKE_DIR=/data/datalake
-      - REPLICATION_FACTOR=2
-      - INGESTION_PEERS=http://ingestion2:7002
-      - BROKER_URL=tcp://activemq:61616
-      - BROKER_QUEUE_INGESTED=document.ingested
+      INGESTION_PORT: 7001
+      DATALAKE_DIR: /data/datalake
+      REPLICATION_FACTOR: 2
+      INGESTION_PEERS: http://ingestion2:7002
+      BROKER_URL: tcp://activemq:61616
+      BROKER_QUEUE: document.ingested
     volumes:
-      - datalake:/data/datalake
+      - datalake1:/data/datalake
     depends_on:
-      - activemq
+      activemq:
+        condition: service_healthy
     ports:
       - "7001:7001"
 
   ingestion2:
     build: ./ingestion-service
     container_name: ingestion2
+    restart: always
     environment:
-      - INGESTION_PORT=7002
-      - DATALAKE_DIR=/data/datalake
-      - REPLICATION_FACTOR=2
-      - INGESTION_PEERS=http://ingestion1:7001
-      - BROKER_URL=tcp://activemq:61616
-      - BROKER_QUEUE_INGESTED=document.ingested
+      INGESTION_PORT: 7002
+      DATALAKE_DIR: /data/datalake
+      REPLICATION_FACTOR: 2
+      INGESTION_PEERS: http://ingestion1:7001
+      BROKER_URL: tcp://activemq:61616
+      BROKER_QUEUE: document.ingested
     volumes:
-      - datalake:/data/datalake
+      - datalake2:/data/datalake
     depends_on:
-      - activemq
+      activemq:
+        condition: service_healthy
     ports:
       - "7002:7002"
 
   indexing1:
     build: ./indexing-service
     container_name: indexing1
+    restart: always
     environment:
-      - INDEXING_PORT=7003
-      - BROKER_URL=tcp://activemq:61616
-      - BROKER_QUEUE_INGESTED=document.ingested
-      - HZ_CLUSTER_NAME=search-cluster
-      - INGESTION_BASE=http://ingestion1:7001
+      INDEXING_PORT: 7003
+      BROKER_URL: tcp://activemq:61616
+      BROKER_QUEUE_INGESTED: document.ingested
+      HZ_CLUSTER_NAME: search-cluster
+      INGESTION_BASE: http://ingestion1:7001
     volumes:
-      - datalake:/data/datalake
+      - datalake1:/data/datalake
     depends_on:
-      - activemq
-      - hazelcast
+      activemq:
+        condition: service_healthy
+      hazelcast:
+        condition: service_started
     ports:
       - "7003:7003"
 
   search1:
     build: ./search-service
     container_name: search1
+    restart: always
     environment:
-      - SEARCH_PORT=7004
-      - HAZELCAST_CLUSTER_NAME=search-cluster
-      - HAZELCAST_CLUSTER_ADDRESS=hazelcast:5701
+      SEARCH_PORT: 7004
+      HAZELCAST_CLUSTER_NAME: search-cluster
+      HAZELCAST_CLUSTER_ADDRESS: hazelcast:5701
     depends_on:
-      - hazelcast
+      hazelcast:
+        condition: service_started
     ports:
       - "7004:7004"
-
 
   nginx:
     image: nginx:latest
@@ -89,7 +102,9 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - search1
+      search1:
+        condition: service_started
 
 volumes:
-  datalake:
+  datalake1:
+  datalake2:
