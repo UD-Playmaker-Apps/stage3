@@ -1,0 +1,6 @@
+es\ulpgc\bigdata\indexing\api\dto\DocumentContent.class
+es\ulpgc\bigdata\indexing\api\IndexingStatusController.class
+es\ulpgc\bigdata\indexing\index\HazelcastIndexProvider.class
+es\ulpgc\bigdata\indexing\util\TextTokenizer.class
+es\ulpgc\bigdata\indexing\IndexingApplication.class
+es\ulpgc\bigdata\indexing\messaging\JmsIndexingConsumer.class

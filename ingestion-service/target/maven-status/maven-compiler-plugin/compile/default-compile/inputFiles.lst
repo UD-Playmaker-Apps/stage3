@@ -1,0 +1,12 @@
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\ReplicationManager.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\api\IngestionController.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\IngestionService.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\MetadataFetcher.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\api\dto\DocumentInfoResponse.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\DocumentDownloader.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\api\dto\IngestionStatusResponse.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\BrokerPublisher.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\GutenbergDownloader.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\IngestionApplication.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\DatalakePartition.java
+C:\Users\vituk\OneDrive\Escritorio\stage3\ingestion-service\src\main\java\es\ulpgc\bigdata\ingestion\core\IngestionStatus.java

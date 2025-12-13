@@ -1,0 +1,7 @@
+es\ulpgc\bigdata\search\core\SearchEngine.class
+es\ulpgc\bigdata\search\model\SearchResponse.class
+es\ulpgc\bigdata\search\core\HazelcastClientProvider.class
+es\ulpgc\bigdata\search\model\SearchHit.class
+es\ulpgc\bigdata\search\SearchApplication.class
+es\ulpgc\bigdata\search\model\DocumentMetadata.class
+es\ulpgc\bigdata\search\model\Posting.class
