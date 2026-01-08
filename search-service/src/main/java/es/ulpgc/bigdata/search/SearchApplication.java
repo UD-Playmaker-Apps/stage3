@@ -32,9 +32,10 @@ public class SearchApplication {
 
         app.get("/search", ctx -> handleSearch(ctx, searchEngine));
 
+        // Consulta directa por un único término
         app.get("/index/terms/{term}", ctx -> {
             String term = ctx.pathParam("term");
-            var hits = searchEngine.searchTerm(term);
+            var hits = searchEngine.search(term, 100);
             ctx.json(hits);
         });
 
@@ -56,7 +57,7 @@ public class SearchApplication {
                 return Integer.parseInt(envPort);
             } catch (NumberFormatException ignored) {}
         }
-        return 8082;
+        return 7004; // por defecto coherente con tu docker-compose
     }
 
     private static void handleSearch(Context ctx, SearchEngine searchEngine) {

@@ -2,20 +2,12 @@ package es.ulpgc.bigdata.search.model;
 
 import java.io.Serializable;
 
-/**
- * Represents the occurrence of a term in a single document. This is stored
- * inside the inverted index: term -> list of postings.
- *
- * It is important that this class is Serializable so that Hazelcast can
- * distribute it across the cluster.
- */
 public class Posting implements Serializable {
 
     private String documentId;
     private int termFrequency;
     private double tfIdfScore;
 
-    // Required by Hazelcast serialization
     public Posting() {
     }
 

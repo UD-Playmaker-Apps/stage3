@@ -20,7 +20,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Collection;
 
 public class JmsIndexingConsumer implements MessageListener {
 
@@ -43,8 +42,10 @@ public class JmsIndexingConsumer implements MessageListener {
             }
 
             JsonObject ev = JsonParser.parseString(tm.getText()).getAsJsonObject();
-            String id = ev.has("documentId") ? ev.get("documentId").getAsString() : null;
-            String path = ev.has("path") && !ev.get("path").isJsonNull() ? ev.get("path").getAsString() : null;
+            String id = ev.has("documentId") && !ev.get("documentId").isJsonNull()
+                    ? ev.get("documentId").getAsString() : null;
+            String path = ev.has("path") && !ev.get("path").isJsonNull()
+                    ? ev.get("path").getAsString() : null;
 
             if (id == null || id.isBlank()) {
                 log.warn("Received event without documentId: {}", ev);
@@ -56,19 +57,24 @@ public class JmsIndexingConsumer implements MessageListener {
                 return;
             }
 
-            String content = tryReadLocal(path);
-            if (content == null) {
-                content = fetchFromIngestion(id);
+            DocumentContent doc = tryReadLocal(path);
+            if (doc == null || doc.body == null || doc.body.isBlank()) {
+                doc = fetchFromIngestion(id);
             }
 
-            if (content == null || content.isBlank()) {
+            if (doc == null || doc.body == null || doc.body.isBlank()) {
                 log.warn("Empty content for {}, skipping", id);
                 return;
             }
 
-            for (String term : TextTokenizer.tokens(content)) {
+            for (String term : TextTokenizer.tokens(doc.body)) {
                 indexProvider.invertedIndex().put(term, id);
             }
+
+            if (doc.metadata != null) {
+                indexProvider.metadataIndex().put(id, doc.metadata);
+            }
+
             indexProvider.indexedDocs().add(id);
             log.info("Indexed {}", id);
 
@@ -77,45 +83,53 @@ public class JmsIndexingConsumer implements MessageListener {
         }
     }
 
-    private String tryReadLocal(String path) {
+    private DocumentContent tryReadLocal(String path) {
         if (path == null || path.isBlank()) return null;
         try {
             Path p = Path.of(path);
-            if (Files.isDirectory(p)) {
-                Path body = p.resolve("body.txt");
-                if (Files.exists(body)) return Files.readString(body, StandardCharsets.UTF_8);
-                Path doc = p.resolve("document.txt");
-                if (Files.exists(doc)) return Files.readString(doc, StandardCharsets.UTF_8);
-                return null;
-            } else if (Files.exists(p)) {
-                return Files.readString(p, StandardCharsets.UTF_8);
-            } else {
-                return null;
+            if (!Files.isDirectory(p)) return null;
+
+            DocumentContent doc = new DocumentContent();
+
+            Path header = p.resolve("header.txt");
+            Path body = p.resolve("body.txt");
+            Path metadata = p.resolve("metadata.json");
+
+            doc.header = Files.exists(header)
+                    ? Files.readString(header, StandardCharsets.UTF_8) : "";
+            doc.body = Files.exists(body)
+                    ? Files.readString(body, StandardCharsets.UTF_8) : "";
+
+            if (Files.exists(metadata)) {
+                String raw = Files.readString(metadata, StandardCharsets.UTF_8);
+                doc.metadata = gson.fromJson(raw, java.util.Map.class);
             }
+
+            return doc;
         } catch (Exception e) {
             log.warn("Local read failed for {}: {}", path, e.getMessage());
             return null;
         }
     }
 
-    private String fetchFromIngestion(String id) {
+    private DocumentContent fetchFromIngestion(String id) {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(ingestionBase + "/ingest/raw/" + id))
                     .timeout(Duration.ofSeconds(5))
                     .GET()
                     .build();
+
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (res.statusCode() == 200 && res.body() != null && !res.body().isBlank()) {
-                DocumentContent doc = gson.fromJson(res.body(), DocumentContent.class);
-                String header = doc.header == null ? "" : doc.header;
-                String body = doc.body == null ? "" : doc.body;
-                return (header + "\n" + body).trim();
-            } else {
+            if (res.statusCode() != 200 || res.body() == null || res.body().isBlank()) {
                 log.warn("Ingestion returned {} when fetching {}", res.statusCode(), id);
+                return null;
             }
+
+            return gson.fromJson(res.body(), DocumentContent.class);
+
         } catch (Exception e) {
             log.error("Error fetching {} from ingestion: {}", id, e.getMessage());
+            return null;
         }
-        return null;
     }
 }
