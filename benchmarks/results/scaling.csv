@@ -1,0 +1,4 @@
+﻿duration_s,successful_requests,avg_latency_ms
+10,65,71.26
+20,394,50.03
+30,619,47.69
