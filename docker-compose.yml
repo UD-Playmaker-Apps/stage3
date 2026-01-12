@@ -17,12 +17,14 @@ services:
       retries: 10
 
   hazelcast:
-    image: hazelcast/hazelcast:5.3
+    image: hazelcast/hazelcast:5.3.6
     container_name: hazelcast
     environment:
       HZ_CLUSTERNAME: search-cluster
     ports:
       - "5701:5701"
+    volumes:
+      - ./hazelcast/hazelcast.yaml:/opt/hazelcast/hazelcast.yaml
 
   ingestion1:
     build: ./ingestion-service

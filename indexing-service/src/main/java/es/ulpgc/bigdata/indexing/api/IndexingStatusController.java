@@ -69,9 +69,9 @@ public class IndexingStatusController {
             }
 
             try {
-                // limpiar términos antiguos
+                // limpiar términos antiguos (con LIST: eliminar TODAS las ocurrencias)
                 for (String term : indexProvider.terms()) {
-                    indexProvider.getDocs(term).remove(id);
+                    indexProvider.getDocs(term).removeIf(v -> v.equals(id));
                 }
                 indexProvider.indexedDocs().remove(id);
                 indexProvider.metadataIndex().remove(id);

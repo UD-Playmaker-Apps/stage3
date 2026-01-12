@@ -1,0 +1,13 @@
+hazelcast:
+  cluster-name: search-cluster
+
+  multimap:
+    inverted-index:
+      value-collection-type: LIST
+      backup-count: 2
+      async-backup-count: 1
+
+  map:
+    metadata-index:
+      backup-count: 2
+      async-backup-count: 1
