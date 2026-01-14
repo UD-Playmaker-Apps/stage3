@@ -1,5 +1,7 @@
 package es.ulpgc.bigdata.ingestion.api;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import es.ulpgc.bigdata.ingestion.api.dto.DocumentInfoResponse;
@@ -35,12 +37,22 @@ public class IngestionController {
 
     private void startIngestion(Context ctx) {
         String id = ctx.pathParam("id");
+
+        // 1. Comprobar si ya existe en el datalake persistente
+        Path docDir = Path.of("/data/datalake/docs/" + id);
+        if (Files.exists(docDir) && Files.isDirectory(docDir)) {
+            ctx.status(409).result("Document already ingested: " + id);
+            return;
+        }
+
+        // 2. Comprobar si ya está marcado como COMPLETED en memoria
         IngestionStatus status = ingestionService.getStatus(id);
         if (status == IngestionStatus.COMPLETED) {
             ctx.status(409).result("Document already ingested: " + id);
             return;
         }
 
+        // 3. Lanzar la ingesta en un hilo separado
         new Thread(() -> {
             try {
                 ingestionService.ingest(id);

@@ -39,6 +39,7 @@ services:
       BROKER_QUEUE: document.ingested
     volumes:
       - datalake1:/data/datalake
+      - ./local-backup:/local-backup
     depends_on:
       activemq:
         condition: service_healthy
@@ -58,6 +59,7 @@ services:
       BROKER_QUEUE: document.ingested
     volumes:
       - datalake2:/data/datalake
+      - ./local-backup:/local-backup
     depends_on:
       activemq:
         condition: service_healthy
@@ -110,3 +112,4 @@ services:
 volumes:
   datalake1:
   datalake2:
+  localbackup:
