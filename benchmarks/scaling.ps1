@@ -1,12 +1,12 @@
 Write-Host "=== SCALING BENCHMARK (LOAD-BASED, TIME-LIMITED) ==="
 
 $Url = "http://localhost:7004/search?q=the"
-$Durations = @(10, 20, 30)   # segundos
+$Durations = @(10, 20, 30)   # seconds
 $ResultFile = "benchmarks/results/scaling.csv"
 
 "duration_s,successful_requests,avg_latency_ms" | Out-File $ResultFile -Encoding utf8
 
-# Arrancar sistema una sola vez
+# Start the full system only once
 Write-Host "Starting full system..."
 docker compose up -d
 Start-Sleep -Seconds 40

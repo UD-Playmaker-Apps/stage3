@@ -1,18 +1,18 @@
 Write-Host "=== BASELINE BENCHMARK ==="
 
-# Configuración
+# Configuration
 $Url = "http://localhost:8080/search?q=the"
 $Requests = 10
 $ResultFile = "benchmarks/results/baseline.csv"
 
-# Cabecera CSV
+# CSV Header
 "test,requests,total_time_ms,avg_latency_ms" | Out-File $ResultFile -Encoding utf8
 
-# Arrancar sistema
+# Start the system
 docker compose up -d
 Start-Sleep -Seconds 20
 
-# Medición
+# Measurement
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
 for ($i = 0; $i -lt $Requests; $i++) {
@@ -24,11 +24,11 @@ $sw.Stop()
 $totalMs = $sw.ElapsedMilliseconds
 $avgMs = [math]::Round($totalMs / $Requests, 2)
 
-# Guardar resultados
+# Save results
 "baseline,$Requests,$totalMs,$avgMs" | Add-Content $ResultFile
 
-# Parar sistema
+# Stop system
 docker compose down
 
-Write-Host "Baseline terminado"
-Write-Host "Resultados en benchmarks/results/baseline.csv"
+Write-Host "Baseline finished"
+Write-Host "Results saved in benchmarks/results/baseline.csv"

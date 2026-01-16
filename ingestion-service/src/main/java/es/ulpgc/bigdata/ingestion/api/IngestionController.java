@@ -4,16 +4,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import es.ulpgc.bigdata.ingestion.api.dto.DocumentInfoResponse;
 import es.ulpgc.bigdata.ingestion.api.dto.IngestionStatusResponse;
 import es.ulpgc.bigdata.ingestion.core.IngestionService;
 import es.ulpgc.bigdata.ingestion.core.IngestionStatus;
-
 import io.javalin.Javalin;
 import io.javalin.http.Context;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class IngestionController {
 
@@ -38,21 +37,21 @@ public class IngestionController {
     private void startIngestion(Context ctx) {
         String id = ctx.pathParam("id");
 
-        // 1. Comprobar si ya existe en el datalake persistente
+        // 1. Check if already ingested on disk
         Path docDir = Path.of("/data/datalake/docs/" + id);
         if (Files.exists(docDir) && Files.isDirectory(docDir)) {
             ctx.status(409).result("Document already ingested: " + id);
             return;
         }
 
-        // 2. Comprobar si ya está marcado como COMPLETED en memoria
+        // 2. Check if already marked as COMPLETED in memory
         IngestionStatus status = ingestionService.getStatus(id);
         if (status == IngestionStatus.COMPLETED) {
             ctx.status(409).result("Document already ingested: " + id);
             return;
         }
 
-        // 3. Lanzar la ingesta en un hilo separado
+        // 3. Launch ingestion in a separate thread
         new Thread(() -> {
             try {
                 ingestionService.ingest(id);

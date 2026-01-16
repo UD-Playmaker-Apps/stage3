@@ -1,17 +1,18 @@
 package es.ulpgc.bigdata.indexing.api;
 
-import com.google.gson.Gson;
-import com.hazelcast.cluster.Member;
-import es.ulpgc.bigdata.indexing.index.HazelcastIndexProvider;
-import es.ulpgc.bigdata.indexing.util.TextTokenizer;
-import io.javalin.Javalin;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import com.google.gson.Gson;
+import com.hazelcast.cluster.Member;
+
+import es.ulpgc.bigdata.indexing.index.HazelcastIndexProvider;
+import es.ulpgc.bigdata.indexing.util.TextTokenizer;
+import io.javalin.Javalin;
 
 public class IndexingStatusController {
 
@@ -69,7 +70,7 @@ public class IndexingStatusController {
             }
 
             try {
-                // limpiar términos antiguos (con LIST: eliminar TODAS las ocurrencias)
+                // clean old existing entries
                 for (String term : indexProvider.terms()) {
                     indexProvider.getDocs(term).removeIf(v -> v.equals(id));
                 }

@@ -1,18 +1,18 @@
 Write-Host "=== FAULT TOLERANCE BENCHMARK ==="
 
 $Url = "http://localhost:7004/search?q=the"
-$DurationBefore = 10   # segundos
-$DurationAfter  = 10   # segundos
+$DurationBefore = 10   # seconds
+$DurationAfter  = 10   # seconds
 $ResultFile = "benchmarks/results/fault.csv"
 
 "phase,duration_s,successful_requests,avg_latency_ms" | Out-File $ResultFile -Encoding utf8
 
-# 1️⃣ Arrancar sistema
+# Start the system
 Write-Host "Starting system..."
 docker compose up -d
 Start-Sleep -Seconds 40
 
-# 2️⃣ Fase ANTES del fallo
+# Step before failure
 Write-Host "Phase BEFORE failure..."
 
 $latencies = @()
@@ -41,12 +41,12 @@ if ($success -gt 0) {
 
 "before_failure,$DurationBefore,$success,$avgLatency" | Add-Content $ResultFile
 
-# 3️⃣ Provocar fallo
+# Simulate failure
 Write-Host "Stopping search1 (simulated failure)..."
 docker stop search1
 Start-Sleep -Seconds 5
 
-# 4️⃣ Fase DESPUÉS del fallo
+# Step after failure
 Write-Host "Phase AFTER failure..."
 
 $latencies = @()
@@ -75,7 +75,7 @@ if ($success -gt 0) {
 
 "after_failure,$DurationAfter,$success,$avgLatency2" | Add-Content $ResultFile
 
-# 5️⃣ Recuperación
+# Step recovery
 Write-Host "Restarting search1..."
 docker start search1
 Start-Sleep -Seconds 30

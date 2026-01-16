@@ -1,13 +1,18 @@
 package es.ulpgc.bigdata.ingestion;
 
-import es.ulpgc.bigdata.ingestion.api.IngestionController;
-import es.ulpgc.bigdata.ingestion.core.*;
-import io.javalin.Javalin;
-import io.javalin.json.JavalinJackson;
-
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+
+import es.ulpgc.bigdata.ingestion.api.IngestionController;
+import es.ulpgc.bigdata.ingestion.core.BrokerPublisher;
+import es.ulpgc.bigdata.ingestion.core.DatalakePartition;
+import es.ulpgc.bigdata.ingestion.core.DocumentDownloader;
+import es.ulpgc.bigdata.ingestion.core.IngestionService;
+import es.ulpgc.bigdata.ingestion.core.MetadataFetcher;
+import es.ulpgc.bigdata.ingestion.core.ReplicationManager;
+import io.javalin.Javalin;
+import io.javalin.json.JavalinJackson;
 
 public class IngestionApplication {
 
@@ -30,10 +35,10 @@ public class IngestionApplication {
         ReplicationManager replicationManager = new ReplicationManager(peers, replicationFactor);
         BrokerPublisher brokerPublisher = new BrokerPublisher(brokerUrl, queueName);
 
-        IngestionService ingestionService =
-                new IngestionService(datalake, downloader, metadataFetcher, replicationManager, brokerPublisher);
+        IngestionService ingestionService
+                = new IngestionService(datalake, downloader, metadataFetcher, replicationManager, brokerPublisher);
 
-        // ✅ JSON mapper correcto para Javalin 5
+        // JSON mapper conf
         Javalin app = Javalin.create(config -> {
             config.jsonMapper(new JavalinJackson());
         });
@@ -42,8 +47,11 @@ public class IngestionApplication {
 
         app.get("/ingest/raw/{id}", ctx -> {
             var doc = datalake.readDocumentWithMetadata(ctx.pathParam("id"));
-            if (doc == null) ctx.status(404).result("Not found");
-            else ctx.json(doc);
+            if (doc == null) {
+                ctx.status(404).result("Not found"); 
+            }else {
+                ctx.json(doc);
+            }
         });
 
         app.start(port);

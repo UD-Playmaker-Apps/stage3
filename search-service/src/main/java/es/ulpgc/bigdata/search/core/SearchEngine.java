@@ -1,18 +1,28 @@
 package es.ulpgc.bigdata.search.core;
 
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
 import com.hazelcast.collection.ISet;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
 import com.hazelcast.multimap.MultiMap;
-import es.ulpgc.bigdata.search.model.SearchHit;
 
-import java.util.*;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+import es.ulpgc.bigdata.search.model.SearchHit;
 
 public class SearchEngine {
 
-    // Igual que en indexing-service (TextTokenizer) para consistencia
+    // Same as in indexing-service (TextTokenizer) for consistency
     private static final Pattern SPLIT = Pattern.compile("[^\\p{L}\\p{Nd}]+");
 
     private final MultiMap<String, String> invertedIndex;
@@ -26,19 +36,29 @@ public class SearchEngine {
     }
 
     public List<SearchHit> search(String queryText, int limit) {
-        if (queryText == null || queryText.isBlank()) return Collections.emptyList();
-        if (limit <= 0) limit = 10;
+        if (queryText == null || queryText.isBlank()) {
+            return Collections.emptyList();
+        }
+        if (limit <= 0) {
+            limit = 10;
+        }
 
         List<String> terms = tokenize(queryText);
-        if (terms.isEmpty()) return Collections.emptyList();
+        if (terms.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        // N = número total de documentos indexados
+        // N = total number of indexed documents
         int totalDocs = indexedDocs.size();
-        if (totalDocs == 0) return Collections.emptyList();
+        if (totalDocs == 0) {
+            return Collections.emptyList();
+        }
 
-        // TF de la query (evita doble contar si el usuario repite términos)
+        // TF of the query (avoids double counting if the user repeats terms)
         Map<String, Integer> queryTf = new HashMap<>();
-        for (String t : terms) queryTf.merge(t, 1, Integer::sum);
+        for (String t : terms) {
+            queryTf.merge(t, 1, Integer::sum);
+        }
 
         Map<String, Double> scoreByDoc = new HashMap<>();
 
@@ -47,21 +67,25 @@ public class SearchEngine {
             int qf = qEntry.getValue();
 
             Collection<String> postings = invertedIndex.get(term);
-            if (postings == null || postings.isEmpty()) continue;
+            if (postings == null || postings.isEmpty()) {
+                continue;
+            }
 
-            // df = número de documentos distintos que contienen el término
+            // df = number of distinct documents containing the term
             Set<String> docsWithTerm = new HashSet<>(postings);
             int df = docsWithTerm.size();
-            if (df == 0) continue;
+            if (df == 0) {
+                continue;
+            }
 
-            // IDF suavizado: evita idf=0 cuando N=df (muy común con pocos docs)
+            // Smoothed IDF: avoids idf=0 when N=df (very common with few docs)
             // idf = log((N+1)/(df+1)) + 1
             double idf = Math.log((totalDocs + 1.0) / (df + 1.0)) + 1.0;
 
-            // Peso de la query (opcional, pero estándar): (1 + log(qf))
+            // Query weight (optional, but standard): (1 + log(qf))
             double qWeight = 1.0 + Math.log(qf);
 
-            // TF por documento contando ocurrencias reales (requiere MultiMap con LIST para duplicados)
+            // TF per document counting actual occurrences (requires MultiMap with LIST for duplicates)
             Map<String, Integer> tfByDoc = new HashMap<>();
             for (String docId : postings) {
                 tfByDoc.merge(docId, 1, Integer::sum);
@@ -71,7 +95,7 @@ public class SearchEngine {
                 String docId = e.getKey();
                 int tf = e.getValue();
 
-                // TF log-normalizado: (1 + log(tf))
+                // TF log-normalized: (1 + log(tf))
                 double tfWeight = 1.0 + Math.log(tf);
 
                 double tfidf = (tfWeight * idf) * qWeight;
@@ -79,7 +103,9 @@ public class SearchEngine {
             }
         }
 
-        if (scoreByDoc.isEmpty()) return Collections.emptyList();
+        if (scoreByDoc.isEmpty()) {
+            return Collections.emptyList();
+        }
 
         return scoreByDoc.entrySet().stream()
                 .sorted(Comparator.comparingDouble(Map.Entry<String, Double>::getValue).reversed())
@@ -96,9 +122,13 @@ public class SearchEngine {
 
         if (meta != null) {
             Object t = meta.get("title");
-            if (t != null) title = t.toString();
+            if (t != null) {
+                title = t.toString();
+            }
             Object s = meta.get("sourceUrl");
-            if (s != null) url = s.toString();
+            if (s != null) {
+                url = s.toString();
+            }
         }
 
         return new SearchHit(docId, title, url, score);

@@ -1,5 +1,9 @@
 package es.ulpgc.bigdata.indexing.index;
 
+import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
+
 import com.hazelcast.collection.ISet;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.MapConfig;
@@ -8,10 +12,6 @@ import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
 import com.hazelcast.multimap.MultiMap;
-
-import java.util.Collection;
-import java.util.Map;
-import java.util.Set;
 
 public class HazelcastIndexProvider {
 
@@ -23,7 +23,7 @@ public class HazelcastIndexProvider {
     public HazelcastIndexProvider(String clusterName, int backupCount, int asyncBackupCount) {
         Config cfg = new Config().setClusterName(clusterName);
 
-        // MultiMapConfig (no MapConfig) + LIST para permitir duplicados y por tanto TF real
+        // MultiMapConfig (no MapConfig) + LIST to allow duplicate values and TF counting
         cfg.getMultiMapConfig("inverted-index")
                 .setBackupCount(backupCount)
                 .setAsyncBackupCount(asyncBackupCount)

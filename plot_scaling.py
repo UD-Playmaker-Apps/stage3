@@ -14,9 +14,7 @@ df = pd.read_csv(csv_path)
 # Compute throughput (requests per second)
 df["throughput_rps"] = df["successful_requests"] / df["duration_s"]
 
-# -----------------------------
 # Plot 1: Average latency vs duration
-# -----------------------------
 plt.figure()
 plt.plot(df["duration_s"], df["avg_latency_ms"], marker="o")
 plt.xlabel("Test duration (seconds)")
@@ -27,9 +25,7 @@ plt.tight_layout()
 plt.savefig(results_dir / "latency_vs_duration.png")
 plt.close()
 
-# -----------------------------
 # Plot 2: Throughput vs duration
-# -----------------------------
 plt.figure()
 plt.plot(df["duration_s"], df["throughput_rps"], marker="o")
 plt.xlabel("Test duration (seconds)")
@@ -40,9 +36,7 @@ plt.tight_layout()
 plt.savefig(results_dir / "throughput_vs_duration.png")
 plt.close()
 
-# -----------------------------
 # Plot 3: Total processed requests (optional)
-# -----------------------------
 plt.figure()
 plt.plot(df["duration_s"], df["successful_requests"], marker="o")
 plt.xlabel("Test duration (seconds)")

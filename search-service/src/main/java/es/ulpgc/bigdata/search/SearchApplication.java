@@ -1,16 +1,18 @@
 package es.ulpgc.bigdata.search;
 
+import java.util.List;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.hazelcast.core.HazelcastInstance;
+
 import es.ulpgc.bigdata.search.core.HazelcastClientProvider;
 import es.ulpgc.bigdata.search.core.SearchEngine;
 import es.ulpgc.bigdata.search.model.SearchResponse;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.List;
-import java.util.Map;
 
 public class SearchApplication {
 
@@ -32,7 +34,7 @@ public class SearchApplication {
 
         app.get("/search", ctx -> handleSearch(ctx, searchEngine));
 
-        // Consulta directa por un único término
+        // Direct search for a specific term
         app.get("/index/terms/{term}", ctx -> {
             String term = ctx.pathParam("term");
             var hits = searchEngine.search(term, 100);
@@ -55,9 +57,10 @@ public class SearchApplication {
         if (envPort != null && !envPort.isBlank()) {
             try {
                 return Integer.parseInt(envPort);
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException ignored) {
+            }
         }
-        return 7004; // por defecto coherente con tu docker-compose
+        return 7004; // default consistent with our docker-compose
     }
 
     private static void handleSearch(Context ctx, SearchEngine searchEngine) {
